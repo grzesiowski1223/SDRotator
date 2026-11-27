@@ -10,15 +10,15 @@ char tleLine1[] = "1 59051U 24039A   26330.60223462 -.00000013  00000+0  13910-4
 char tleLine2[] = "2 59051  98.7261 288.0371 0008071  63.5511 296.6494 14.22444475142353";
           
 // WiFi config
-const char* ssid = "SSID_HERE";
-const char* password = "PASSWORD_HERE";
+const char* ssid = "";
+const char* password = "";
 
 // NTP server config
 const char* ntpServer = "pool.ntp.org";
 const long gmtOffset_sec = 0;
 const int daylightOffset_sec = 3600;
 
-static int mode = 0; // 0 - Normal Operational, 1 - Maintenance mode, 2 - (Planned) SatNOGS może coś kiedyś wymyśle czy coś, 3 - Safe mode
+static int mode = 0; // 0 - Normal Operational, 1 - Maintenance mode, 2 - (Planned) SatNOGS może coś kiedyś wymyśle czy coś, 3 - Safe mode (more for debbuging setting it makes the safemode loop)
 bool isThrottled = false;
 
 void calibrateExpert() {
@@ -67,25 +67,62 @@ void syncTimeNTP() {
   }
 }
 
+bool safePowerApplied = false;
+
+void applySafePower() {
+  float temp_c = temperatureRead();
+  if (safePowerApplied) return; // Already applied, do not repeat in loop()
+
+  setCpuFrequencyMhz(80);
+  Serial.println("Setting CPU frequency to 80MHz.");
+
+  WiFi.setSleep(WIFI_PS_MIN_MODEM);
+  Serial.println("Using Minimal WiFi Mode.");
+
+  Serial.println("CPU temp will be printed in 30 secs...");
+  delay(30000);
+  Serial << "CPU Temp: " << temp_c << endl;
+
+  safePowerApplied = true;
+}
+
+void restoreNormalPower() {
+  if (!safePowerApplied) return;
+
+  setCpuFrequencyMhz(240);
+  WiFi.setSleep(false);
+  Serial.println("Restored normal CPU frequency and Wi-Fi sleep mode.");
+
+  safePowerApplied = false;
+}
+
 void safeMode() {
-  Serial.println("Entering Safe Mode...");
-  mode = 3
-  // tu trzeba zmniejszyć mhz procka i zmniejszyć wifi aby zaoszczedzić cpu
+  static bool announced = false;
+  if (!announced) {
+    Serial.println("\nEntering Safe Mode...\n");
+    announced = true;
+  }
+  applySafePower();
 }
 
 void throttleProtection() {
-  //float temp_c = temperatureRead();
-  float temp_c = 70.00;
-  if (temp_c >= 70.00) {
-    Serial.println("Thermal Protection Tripped. Oh great heavens CPU OVERHEATS! ");
+  float temp_c = temperatureRead();
+
+  if (temp_c >= 70.00 && !isThrottled) {
+    Serial.println("Thermal Protection Tripped. Oh great heavens CPU overheating!");
     isThrottled = true;
+  } else if (temp_c <= 60.00 && isThrottled) {
+    Serial.println("CPU cooled down. Exiting thermal throttle.");
+    isThrottled = false;
+    if (mode != 3) {
+      restoreNormalPower();
+    }
   }
 
-  if (isThrottled == true) {
+  if (isThrottled) {
     safeMode();
   }
 }
-
 void sateliteTrack() {
   time_t t = time(nullptr);
   if (t < 1700000000) {
@@ -97,7 +134,7 @@ void sateliteTrack() {
   sat.findsat(now);
   float temp_c = temperatureRead();
 
-  Serial << "UNIX Time: " << now << " | Az: " << sat.satAz << " st." << " | El: " << sat.satEl << " st." << " Current Target: " << satName << " [|] CPU Temp: " << temp_c << " °C" << endl;
+  Serial << "UNIX Time: " << now << " | Az: " << sat.satAz << " st." << " | El: " << sat.satEl << " st." << " Current Target: " << satName << "     [\/] CPU Temp: " << temp_c << " °C" << endl;
 }
 
 void connectWiFiWithReset() {
@@ -139,11 +176,19 @@ void setup() {
 
   connectWiFiWithReset();
 
-  sat.site(LANGTITUDE, LONGITUDE, ALTITUDE); //set site latitude[°], longitude[°] and altitude[m]
+  sat.site(LAT, LONG, ALT); //set site latitude[°], longitude[°] and altitude[m]
   sat.init(satName, tleLine1, tleLine2);
 }
 
 void loop() {
+  static int lastMode = -1;
+  if (mode != lastMode) {
+    if (lastMode == 3 && mode != 3 && !isThrottled) {
+      restoreNormalPower();
+    }
+    lastMode = mode;
+  }
+
   throttleProtection();
 
   if (mode == 1) {
@@ -151,15 +196,12 @@ void loop() {
     delay(2000);
   } else if (mode == 2) {
     // Place for mode 2
+    delay(500);
   } else if (mode == 3) {
     safeMode();
+    delay(500);
   } else {
     sateliteTrack();
     delay(2000);
   }
 }
-
-// TODO:
-// 1. Call throttleProtection() each loop and gate rotor/motor commands when isThrottled is true.
-// 2. Return early from maintenanceMode() once calibration is complete and set mode = 0.
-// 3. Implement rotor/antenna positioning.
