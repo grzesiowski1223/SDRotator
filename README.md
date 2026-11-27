@@ -8,6 +8,7 @@ Satellite Dish mount using ESP32-S3 Devboard
 - Fetching Azimuth and Elevation of the satellite
 - WiFi NTP syncing 
 - CPU Overheat Protection
+- Basic Command Line User Inteface
   
 # ToDos
 - [ ] Motor control
