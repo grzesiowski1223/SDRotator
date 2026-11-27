@@ -16,5 +16,6 @@ Satellite Dish mount using ESP32-S3 Devboard
 - [ ] Updating TLE data via WiFi
 - [ ] Maybe some kind of webgui or sum?
 - [ ] Add compatibility for small 128x64 oled screens
+- [ ] Add switch if satellite is visible 
 
 ### Piece of shit code but quoting my friend "If it works it ain't shit"
