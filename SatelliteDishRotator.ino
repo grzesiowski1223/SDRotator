@@ -79,18 +79,14 @@ void applySafePower() {
   WiFi.setSleep(WIFI_PS_MIN_MODEM);
   Serial.println("Using Minimal WiFi Mode.");
 
-  Serial.println("CPU temp will be printed in 30 secs...");
-  delay(30000);
-  Serial << "CPU Temp: " << temp_c << endl;
-
   safePowerApplied = true;
 }
 
 void restoreNormalPower() {
-  if (!safePowerApplied) return;
+  if (!safePowerApplied) return; // Already normal, do not repeat in loop()
 
-  setCpuFrequencyMhz(240);
-  WiFi.setSleep(false);
+  setCpuFrequencyMhz(240); // Default ESP32 frequency
+  WiFi.setSleep(false);     // Or WIFI_PS_NONE
   Serial.println("Restored normal CPU frequency and Wi-Fi sleep mode.");
 
   safePowerApplied = false;
@@ -132,9 +128,9 @@ void sateliteTrack() {
 
   unsigned long now = static_cast<unsigned long>(t);
   sat.findsat(now);
-  float temp_c = temperatureRead();
-
-  Serial << "UNIX Time: " << now << " | Az: " << sat.satAz << " st." << " | El: " << sat.satEl << " st." << " Current Target: " << satName << "     [\/] CPU Temp: " << temp_c << " °C" << endl;
+  
+  //float temp_c = temperatureRead();
+  //Serial << "UNIX Time: " << now << " | Az: " << sat.satAz << " st." << " | El: " << sat.satEl << " st." << " Current Target: " << satName << "     [\/] CPU Temp: " << temp_c << " °C" << endl;
 }
 
 void connectWiFiWithReset() {
@@ -167,6 +163,49 @@ void connectWiFiWithReset() {
   } else {
     Serial.print("\nFailed to connect. Status: ");
     Serial.println(WiFi.status());
+  }
+}
+
+void printPrompt() {
+  Serial << "SDR>" << endl;
+}
+
+void commandUserInterface() {
+  if (Serial.available() == 0) {
+    return;
+  }
+
+  // Only read a full line once a newline is present to avoid timeout stalls
+  String command = Serial.readStringUntil('\n');
+  command.trim();
+
+  if (command.length() == 0) {
+    return;
+  }
+
+  Serial << "SDR>" << command << endl;
+
+  if (command == "?") {
+    Serial.println("List of usable commands:");
+    Serial.println("  ?         - shows this command list");
+    Serial.println("  telemetry - shows UNIX time, Azimuth, Elevation, target satellite, and ESP32-S3 CPU temp");
+    printPrompt();
+  } 
+  else if (command == "telemetry") {
+    float temp_c = temperatureRead();
+    time_t currentUnixTime = time(nullptr);
+
+    Serial << "UNIX Time: " << static_cast<long>(currentUnixTime)<< " | Az: " << sat.satAz << " deg" << " | El: " << sat.satEl << " deg" << " | Current Target: " << satName << " | CPU Temp: " << temp_c << " C" << endl;
+
+    if (currentUnixTime < 1700000000) {
+      Serial.println("Warning: System clock may not be NTP-synced yet.");
+    }
+
+    printPrompt();
+  } 
+  else {
+    Serial << "Unknown command: " << command << endl;
+    printPrompt();
   }
 }
 
@@ -204,4 +243,6 @@ void loop() {
     sateliteTrack();
     delay(2000);
   }
+
+  commandUserInterface();
 }
